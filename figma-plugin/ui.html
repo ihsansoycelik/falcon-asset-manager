@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    :root {
+      --bg-color: #161616;
+      --bg-panel: #1c1c1e;
+      --accent-color: #007AFF;
+      --accent-hover: #3395FF;
+      --text-main: #e4e4e7;
+      --text-muted: #71717a;
+      --border-color: #27272a;
+      --success-color: #30d158;
+      --error-color: #ff453a;
+    }
+    
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      margin: 0;
+      padding: 16px;
+      user-select: none;
+      font-size: 12px;
+      overflow-x: hidden;
+    }
+
+    .container {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    h2 {
+      margin: 0 0 4px 0;
+      font-size: 14px;
+      font-weight: 600;
+      background: linear-gradient(135deg, #fff 0%, #a1a1aa 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .subtitle {
+      color: var(--text-muted);
+      font-size: 10px;
+      margin-bottom: 12px;
+    }
+
+    .card {
+      background-color: var(--bg-panel);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .status-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      background-color: #0c0c0e;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      font-size: 11px;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: var(--text-muted);
+      display: inline-block;
+      margin-right: 6px;
+      box-shadow: 0 0 8px currentColor;
+    }
+
+    .status-connected {
+      color: var(--success-color);
+    }
+    .status-disconnected {
+      color: var(--error-color);
+    }
+
+    .btn {
+      background-color: var(--border-color);
+      color: var(--text-main);
+      border: none;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: all 120ms ease;
+    }
+
+    .btn:hover:not(:disabled) {
+      background-color: #3f3f46;
+    }
+
+    .btn-primary {
+      background-color: var(--accent-color);
+      color: white;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background-color: var(--accent-hover);
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .console {
+      background-color: #0c0c0e;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 8px;
+      font-family: monospace;
+      font-size: 10px;
+      color: #30d158;
+      height: 120px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+
+    .section-title {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    .row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .row .btn {
+      flex: 1;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div>
+      <h2>Falcon 2-Way Sync</h2>
+      <div class="subtitle">Bridges React Codebase and Figma Design Canvas</div>
+    </div>
+
+    <div class="status-bar">
+      <span>Sync Server (localhost:3001)</span>
+      <span id="connection-status" class="status-disconnected">
+        <span class="status-dot"></span>Offline
+      </span>
+    </div>
+
+    <div class="card">
+      <div class="section-title">Design System & Variables</div>
+      <button id="btn-sync-variables" class="btn" disabled>
+        Sync Color & Spacing Variables
+      </button>
+    </div>
+
+    <div class="card">
+      <div class="section-title">1-Way Import (React → Figma)</div>
+      <div class="subtitle">Draw Falcon App pages, modals & asset grid on Figma canvas</div>
+      <button id="btn-import-views" class="btn btn-primary" disabled>
+        Draw App Pages & Modals
+      </button>
+    </div>
+
+    <div class="card">
+      <div class="section-title">2-Way Export (Figma → React)</div>
+      <div class="subtitle">Push canvas updates back to React variables/types</div>
+      <button id="btn-export-views" class="btn" disabled>
+        Sync Selected Frame back to Code
+      </button>
+    </div>
+
+    <div>
+      <div class="section-title" style="margin-bottom: 4px;">Log Output</div>
+      <div id="console-log" class="console">Connecting to local sync server...</div>
+    </div>
+  </div>
+
+  <script>
+    const serverUrl = 'http://localhost:3001';
+    let isConnected = false;
+
+    const statusEl = document.getElementById('connection-status');
+    const logEl = document.getElementById('console-log');
+    const btnSyncVars = document.getElementById('btn-sync-variables');
+    const btnImport = document.getElementById('btn-import-views');
+    const btnExport = document.getElementById('btn-export-views');
+
+    function log(message, type = 'info') {
+      const timestamp = new Date().toLocaleTimeString();
+      let color = '#30d158'; // success green
+      if (type === 'error') color = '#ff453a';
+      if (type === 'warn') color = '#ff9f0a';
+      if (type === 'info') color = '#a1a1aa';
+      
+      logEl.innerHTML += `<span style="color: ${color}">[${timestamp}] ${message}</span>\n`;
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    async function checkConnection() {
+      try {
+        const res = await fetch(`${serverUrl}/`);
+        if (res.ok) {
+          if (!isConnected) {
+            isConnected = true;
+            statusEl.className = 'status-connected';
+            statusEl.innerHTML = '<span class="status-dot" style="background-color: var(--success-color)"></span>Online';
+            log('Connected to Falcon local sync server on port 3001!', 'success');
+            btnSyncVars.disabled = false;
+            btnImport.disabled = false;
+            btnExport.disabled = false;
+          }
+        }
+      } catch (err) {
+        if (isConnected) {
+          isConnected = false;
+          statusEl.className = 'status-disconnected';
+          statusEl.innerHTML = '<span class="status-dot" style="background-color: var(--error-color)"></span>Offline';
+          log('Disconnected from local sync server. Ensure npm run figma-sync is running.', 'error');
+          btnSyncVars.disabled = true;
+          btnImport.disabled = true;
+          btnExport.disabled = true;
+        }
+      }
+    }
+
+    // Connect polling
+    checkConnection();
+    setInterval(checkConnection, 2000);
+
+    btnSyncVars.onclick = async () => {
+      log('Fetching Design System Tokens from server...', 'info');
+      try {
+        const res = await fetch(`${serverUrl}/layout`);
+        if (!res.ok) throw new Error('Failed to get layout data');
+        const data = await res.json();
+        log('Sending tokens to Figma Plugin Code...', 'info');
+        parent.postMessage({ pluginMessage: { type: 'sync-variables', tokens: data.tokens } }, '*');
+      } catch (err) {
+        log(`Failed to fetch design system: ${err.message}`, 'error');
+      }
+    };
+
+    btnImport.onclick = async () => {
+      log('Fetching application page models from server...', 'info');
+      try {
+        const res = await fetch(`${serverUrl}/layout`);
+        if (!res.ok) throw new Error('Failed to get layout data');
+        const data = await res.json();
+        log(`Loaded layout definitions! Sending to Figma...`, 'info');
+        parent.postMessage({ pluginMessage: { type: 'import-views', structure: data.structure, tokens: data.tokens } }, '*');
+      } catch (err) {
+        log(`Failed to load app views: ${err.message}`, 'error');
+      }
+    };
+
+    btnExport.onclick = () => {
+      log('Requesting selected Figma frame data from Plugin...', 'info');
+      parent.postMessage({ pluginMessage: { type: 'get-selected-frame' } }, '*');
+    };
+
+    // Listen to messages from code.js
+    window.onmessage = async (event) => {
+      const msg = event.data.pluginMessage;
+      if (!msg) return;
+
+      if (msg.type === 'log') {
+        log(msg.message, msg.logType || 'info');
+      }
+
+      if (msg.type === 'export-frame-data') {
+        log(`Exporting frame "${msg.frameName}" layout JSON to server...`, 'info');
+        try {
+          const res = await fetch(`${serverUrl}/layout`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              frameName: msg.frameName,
+              layout: msg.layout
+            })
+          });
+          if (res.ok) {
+            const reply = await res.json();
+            log(`Success! Server updated local code files: ${reply.updatedFiles.join(', ')}`, 'success');
+          } else {
+            const errText = await res.text();
+            throw new Error(errText);
+          }
+        } catch (err) {
+          log(`Failed to sync changes to React codebase: ${err.message}`, 'error');
+        }
+      }
+    };
+  </script>
+</body>
+</html>
