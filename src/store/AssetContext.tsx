@@ -510,6 +510,10 @@ export const AssetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const addFileFromUrl = async (rawUrl: string) => {
     const url = rawUrl.trim();
     if (!url) return;
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      pushToast({ message: 'Only http/https URLs are supported' });
+      return;
+    }
     setIsLoadingUrl(true);
     try {
       const response = await fetch(url);
@@ -640,7 +644,12 @@ export const AssetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const id = `${Date.now()}-${crypto.randomUUID()}`;
         let url = rawAsset.url; let storage: Asset['storage'] = rawAsset.storage;
         if (rawAsset._exportedDataUrl) {
-          const response = await fetch(rawAsset._exportedDataUrl);
+          const exportedUrl = rawAsset._exportedDataUrl;
+          if (!exportedUrl.startsWith('http://') && !exportedUrl.startsWith('https://') && !exportedUrl.startsWith('data:')) {
+            pushToast({ message: `Skipped asset "${rawAsset.name}": unsupported URL scheme` });
+            continue;
+          }
+          const response = await fetch(exportedUrl);
           const blob = await response.blob();
           await saveAssetBlob(id, blob);
           url = URL.createObjectURL(blob); storage = 'indexeddb';

@@ -483,8 +483,8 @@ export default function Sidebar() {
             {hasPin ? 'Remove lock — enter current PIN' : 'Set up a PIN to lock your library'}
           </div>
           {!hasPin && (
-            <p className="text-[10px] text-zinc-500 leading-relaxed">
-              This lock prevents accidental access. It does not encrypt your data — anyone with browser DevTools access can still read it.
+            <p className="text-[10px] text-amber-500/80 leading-relaxed">
+              Casual deterrent only. Anyone with browser DevTools can bypass this instantly (delete the <code className="font-mono">falcon_locked</code> key) or brute-force the 4-digit PIN in under a second. Do not rely on this to protect sensitive assets.
             </p>
           )}
           <input
