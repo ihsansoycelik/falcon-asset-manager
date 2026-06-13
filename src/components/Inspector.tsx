@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useStore } from '../store/AssetContext';
 import { formatBytes, formatDate, formatRelativeDate } from '../lib/utils';
 import RatingStars from './RatingStars';
-import { Download, ImageIcon, BoxSelect, Tag as TagIcon, Trash2, RotateCcw, Star, XCircle, Music, Info } from 'lucide-react';
+import { Download, ImageIcon, BoxSelect, Tag as TagIcon, Trash2, RotateCcw, Star, XCircle, Music, Info, Clipboard, Copy } from 'lucide-react';
 
 function Section({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
@@ -55,6 +55,7 @@ export default function Inspector() {
   const [isAddingBulkTag, setIsAddingBulkTag] = useState(false);
   const [draftBulkTag, setDraftBulkTag] = useState('');
   const [copiedColor, setCopiedColor] = useState<string | null>(null);
+  const [copiedText, setCopiedText] = useState<string | null>(null);
   const selectedId = Array.from(selectedAssetIds)[0];
   const asset = assets.find(a => a.id === selectedId);
   const allExistingTags = React.useMemo(
@@ -74,6 +75,7 @@ export default function Inspector() {
     setIsAddingTag(false);
     setDraftTag('');
     setCopiedColor(null);
+    setCopiedText(null);
   }, [asset?.id]);  // intentionally only re-init on id change, not on every field update
 
   // Flush debounce on unmount
@@ -104,6 +106,7 @@ export default function Inspector() {
       window.setTimeout(() => setCopiedColor(current => current === color ? null : current), 1200);
     } catch {
       setCopiedColor(null);
+      showToast('Failed to copy color to clipboard');
     }
   };
 
@@ -231,6 +234,48 @@ export default function Inspector() {
     document.body.appendChild(link);
     link.click();
     link.remove();
+  };
+
+  const handleCopyImage = async () => {
+    if (!asset) return;
+    try {
+      const response = await fetch(asset.url);
+      let blob = await response.blob();
+      if (blob.type !== 'image/png') {
+        blob = await new Promise<Blob>((resolve, reject) => {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.naturalWidth || img.width;
+            canvas.height = img.naturalHeight || img.height;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.drawImage(img, 0, 0);
+              canvas.toBlob(b => b ? resolve(b) : reject(new Error('Canvas empty')), 'image/png');
+            } else reject(new Error('No context'));
+          };
+          img.onerror = () => reject(new Error('Load error'));
+          img.src = asset.url;
+        });
+      }
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+      setCopiedText('Copied Image!');
+      setTimeout(() => setCopiedText(null), 1500);
+    } catch (err) {
+      console.error(err);
+      await navigator.clipboard.writeText(asset.url);
+      setCopiedText('Copied URL (Fallback)');
+      setTimeout(() => setCopiedText(null), 1500);
+    }
+  };
+
+  const handleCopyText = async (text: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedText(label);
+      setTimeout(() => setCopiedText(null), 1500);
+    } catch {}
   };
 
   return (
@@ -476,6 +521,19 @@ export default function Inspector() {
             <button onClick={() => window.open(asset.url, '_blank', 'noopener,noreferrer')} className="w-full py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold rounded-lg transition-colors">
               View Full Resolution
             </button>
+            {(asset.type === 'image' || asset.type === 'vector') && (
+              <button onClick={handleCopyImage} className="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg flex items-center justify-center gap-2 transition-colors">
+                <Clipboard size={14} /> {copiedText === 'Copied Image!' || copiedText === 'Copied URL (Fallback)' ? copiedText : 'Copy Image'}
+              </button>
+            )}
+            <div className="flex gap-2">
+              <button onClick={() => handleCopyText(asset.name, 'Copied Name!')} className="flex-1 py-2 bg-zinc-800 border border-zinc-700 hover:bg-zinc-700 text-zinc-200 text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 transition-colors">
+                <Copy size={13} /> {copiedText === 'Copied Name!' ? 'Copied!' : 'Copy Name'}
+              </button>
+              <button onClick={() => handleCopyText(asset.url, 'Copied URL!')} className="flex-1 py-2 bg-zinc-800 border border-zinc-700 hover:bg-zinc-700 text-zinc-200 text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 transition-colors">
+                <Copy size={13} /> {copiedText === 'Copied URL!' ? 'Copied!' : 'Copy URL'}
+              </button>
+            </div>
             <button onClick={downloadAsset} className="w-full py-2 bg-zinc-800 border border-zinc-700 hover:bg-zinc-700 text-zinc-200 text-xs font-bold rounded-lg flex items-center justify-center gap-2 transition-colors">
               <Download size={14} /> Download
             </button>

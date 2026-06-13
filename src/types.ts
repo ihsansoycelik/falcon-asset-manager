@@ -38,7 +38,7 @@ export type SortOrder = 'asc' | 'desc';
 
 export type Orientation = 'all' | 'landscape' | 'portrait' | 'square';
 
-export type SmartFolderRuleField = 'tag' | 'type' | 'rating' | 'starred';
+export type SmartFolderRuleField = 'tag' | 'type' | 'rating' | 'starred' | 'name_contains' | 'date_added' | 'size' | 'has_note' | 'folder_contains';
 export type SmartFolderRuleOp = 'is' | 'gte';
 
 export interface SmartFolderRule {

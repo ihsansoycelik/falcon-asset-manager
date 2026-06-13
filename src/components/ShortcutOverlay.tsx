@@ -13,6 +13,7 @@ const shortcuts: [string, string][][] = [
   [
     ['1 – 5', 'Rate selected assets'],
     ['0', 'Clear rating'],
+    ['⌘C', 'Copy image / Export ZIP (multi)'],
     ['Delete', 'Move selected to Trash'],
     ['⌘Z', 'Undo last delete'],
     ['⌘V', 'Paste image to import'],

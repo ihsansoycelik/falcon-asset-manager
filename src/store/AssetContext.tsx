@@ -489,7 +489,6 @@ export const AssetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           break; // stop processing more files once storage is full
         }
         failed.push(file.name);
-        console.error('Failed to import:', file.name, err);
       }
     }
 
@@ -643,6 +642,17 @@ export const AssetProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (rawAsset.fingerprint) existingFingerprints.add(rawAsset.fingerprint);
         const id = `${Date.now()}-${crypto.randomUUID()}`;
         let url = rawAsset.url; let storage: Asset['storage'] = rawAsset.storage;
+
+        // Validate URL scheme for assets that carry an external URL directly
+        // (assets with _exportedDataUrl are validated below in that branch).
+        if (!rawAsset._exportedDataUrl && url) {
+          const SAFE_SCHEMES = ['http://', 'https://', 'data:', 'blob:'];
+          if (!SAFE_SCHEMES.some(s => url.startsWith(s))) {
+            pushToast({ message: `Skipped "${rawAsset.name}": unsupported URL scheme` });
+            continue;
+          }
+        }
+
         if (rawAsset._exportedDataUrl) {
           const exportedUrl = rawAsset._exportedDataUrl;
           if (!exportedUrl.startsWith('http://') && !exportedUrl.startsWith('https://') && !exportedUrl.startsWith('data:')) {
@@ -870,6 +880,60 @@ const assetMatchesSmartFolder = (asset: Asset, sf: SmartFolder): boolean => {
       case 'type': return asset.type === rule.value;
       case 'rating': return (asset.rating ?? 0) >= Number(rule.value);
       case 'starred': return rule.value === 'true' ? asset.starred : !asset.starred;
+      case 'name_contains': return asset.name.toLowerCase().includes(rule.value.toLowerCase());
+      case 'date_added': {
+        const date = new Date(asset.dateAdded);
+        if (isNaN(date.getTime())) return false;
+        const now = new Date();
+        if (rule.value === '7days') {
+          const diffTime = now.getTime() - date.getTime();
+          const diffDays = diffTime / (1000 * 60 * 60 * 24);
+          return diffDays >= 0 && diffDays <= 7;
+        }
+        if (rule.value === '30days') {
+          const diffTime = now.getTime() - date.getTime();
+          const diffDays = diffTime / (1000 * 60 * 60 * 24);
+          return diffDays >= 0 && diffDays <= 30;
+        }
+        if (rule.value === 'this_month') {
+          return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
+        }
+        if (rule.value.startsWith('custom:')) {
+          const parts = rule.value.split(':');
+          const startStr = parts[1];
+          const endStr = parts[2];
+          if (startStr && endStr) {
+            const start = new Date(startStr);
+            start.setHours(0, 0, 0, 0);
+            const end = new Date(endStr);
+            end.setHours(23, 59, 59, 999);
+            return date >= start && date <= end;
+          }
+        }
+        return false;
+      }
+      case 'size': {
+        const parts = rule.value.split(':');
+        const comp = parts[0];
+        const num = Number(parts[1]);
+        const unit = parts[2];
+        if (isNaN(num)) return false;
+        const multiplier = unit === 'MB' ? 1024 * 1024 : 1024;
+        const targetBytes = num * multiplier;
+        if (comp === 'gt') return asset.size > targetBytes;
+        if (comp === 'lt') return asset.size < targetBytes;
+        return false;
+      }
+      case 'has_note': {
+        const hasNote = !!(asset.note && asset.note.trim().length > 0);
+        return rule.value === 'true' ? hasNote : !hasNote;
+      }
+      case 'folder_contains': {
+        const folderPath = asset.folder ?? '';
+        const prefix = rule.value.toLowerCase().trim();
+        if (!prefix) return true;
+        return folderPath.toLowerCase().startsWith(prefix);
+      }
       default: return false;
     }
   });
