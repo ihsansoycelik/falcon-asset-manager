@@ -1,12 +1,13 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
   Search, Plus, List, LayoutGrid, SlidersHorizontal, ChevronLeft, ChevronRight,
   Trash2, Star, StarOff, Tag, FolderOpen, Download, X, ArrowUpDown, RectangleHorizontal,
   RectangleVertical, Square, Check, Link, Loader2, CaseSensitive,
-  Rows3, FileDown, FileUp, MoreHorizontal
+  Rows3, FileDown, FileUp, MoreHorizontal, Archive
 } from 'lucide-react';
 import { useStore } from '../store/AssetContext';
 import { Asset, COLOR_BUCKETS, Orientation, SortBy, SortOrder } from '../types';
+import { downloadAssetFile, exportAssetsAsZip } from '../lib/download';
 
 export default function Toolbar() {
   const {
@@ -67,6 +68,7 @@ export default function Toolbar() {
   const [isBatchRenameOpen, setIsBatchRenameOpen] = useState(false);
   const [batchRenamePattern, setBatchRenamePattern] = useState('{name}');
   const [isMoreOpen, setIsMoreOpen] = useState(false);
+  const [isZipping, setIsZipping] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const importLibraryInputRef = useRef<HTMLInputElement>(null);
@@ -112,38 +114,168 @@ export default function Toolbar() {
       : activeFolder;
   const activeSortLabel = sortOptions.find(o => o.sortBy === sortBy && o.sortOrder === sortOrder)?.label ?? 'Custom';
 
-  const handleBulkStar = () => {
+  const handleBulkStar = useCallback(() => {
     if (allSelectedStarred) {
-      // unstar all
       selectedAssets.filter(a => a.starred).forEach(asset => toggleStarred(asset.id));
     } else {
-      // star all
       selectedAssets.filter(a => !a.starred).forEach(asset => toggleStarred(asset.id));
     }
-  };
-  const handleBulkDelete = () => deleteAssets(Array.from(selectedAssetIds));
-  const handleBulkTagSubmit = () => {
+  }, [allSelectedStarred, selectedAssets, toggleStarred]);
+
+  const handleBulkDelete = useCallback(() => {
+    deleteAssets(Array.from(selectedAssetIds));
+  }, [selectedAssetIds, deleteAssets]);
+
+  const handleBulkTagSubmit = useCallback(() => {
     const tag = bulkTagValue.trim();
     if (tag) Array.from(selectedAssetIds).forEach(id => addAssetTag(id, tag));
     setBulkTagValue('');
     setIsBulkTagOpen(false);
-  };
-  const handleBulkMove = (folder: string | null) => assignAssetsToFolder(Array.from(selectedAssetIds), folder);
+  }, [bulkTagValue, selectedAssetIds, addAssetTag]);
 
-  const handleUrlSubmit = async () => {
+  const handleBulkMove = useCallback((folder: string | null) => {
+    assignAssetsToFolder(Array.from(selectedAssetIds), folder);
+  }, [selectedAssetIds, assignAssetsToFolder]);
+
+  const handleBulkDownload = useCallback(() => {
+    selectedAssets.forEach(asset => {
+      downloadAssetFile(asset);
+    });
+  }, [selectedAssets]);
+
+  const handleBulkExportZip = useCallback(async () => {
+    if (isZipping) return;
+    setIsZipping(true);
+    try {
+      await exportAssetsAsZip(selectedAssets);
+    } finally {
+      setIsZipping(false);
+    }
+  }, [isZipping, selectedAssets]);
+
+  const handleUrlSubmit = useCallback(async () => {
     const url = urlInputValue.trim();
     if (!url) return;
     await addFileFromUrl(url);
     setUrlInputValue('');
     setIsUrlInputOpen(false);
-  };
+  }, [urlInputValue, addFileFromUrl]);
 
-  const handleBatchRenameSubmit = () => {
+  const handleBatchRenameSubmit = useCallback(() => {
     const ids = Array.from(selectedAssetIds);
     batchRenameAssets(ids, batchRenamePattern);
     setIsBatchRenameOpen(false);
     setBatchRenamePattern('{name}');
-  };
+  }, [selectedAssetIds, batchRenamePattern, batchRenameAssets]);
+
+  const handleBulkTagKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') { e.preventDefault(); handleBulkTagSubmit(); }
+    if (e.key === 'Escape') { setBulkTagValue(''); setIsBulkTagOpen(false); }
+  }, [handleBulkTagSubmit]);
+
+  const handleBatchRenameKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') { e.preventDefault(); handleBatchRenameSubmit(); }
+    if (e.key === 'Escape') { setBatchRenamePattern('{name}'); setIsBatchRenameOpen(false); }
+  }, [handleBatchRenameSubmit]);
+
+  const handleBatchRenameCancel = useCallback(() => {
+    setBatchRenamePattern('{name}');
+    setIsBatchRenameOpen(false);
+  }, []);
+
+  const handleSearchQueryChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchQuery(e.target.value);
+  }, [setSearchQuery]);
+
+  const handleThumbSizeChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setThumbSize(Number(e.target.value));
+  }, [setThumbSize]);
+
+  const handleViewModeGrid = useCallback(() => setViewMode('grid'), [setViewMode]);
+  const handleViewModeMasonry = useCallback(() => setViewMode('masonry'), [setViewMode]);
+  const handleViewModeList = useCallback(() => setViewMode('list'), [setViewMode]);
+
+  const handleSortToggle = useCallback(() => {
+    setIsSortOpen(p => !p);
+    setIsFilterOpen(false);
+    setIsMoreOpen(false);
+  }, []);
+
+  const handleFilterToggle = useCallback(() => {
+    setIsFilterOpen(p => !p);
+    setIsSortOpen(false);
+    setIsMoreOpen(false);
+  }, []);
+
+  const handleMoreToggle = useCallback(() => {
+    setIsMoreOpen(p => !p);
+    setIsFilterOpen(false);
+    setIsSortOpen(false);
+  }, []);
+
+  const handleUrlInputKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') { e.preventDefault(); void handleUrlSubmit(); }
+    if (e.key === 'Escape') { setUrlInputValue(''); setIsUrlInputOpen(false); }
+  }, [handleUrlSubmit]);
+
+  const handleUrlInputCancel = useCallback(() => {
+    setUrlInputValue('');
+    setIsUrlInputOpen(false);
+  }, []);
+
+  const handleUrlInputOpenClick = useCallback(() => {
+    setIsUrlInputOpen(true);
+    setTimeout(() => urlInputRef.current?.focus(), 50);
+  }, []);
+
+  const handleFileInputChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    if (event.target.files) { void addFiles(event.target.files); event.target.value = ''; }
+  }, [addFiles]);
+
+  const handleImportLibraryInputChange = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) { await importLibrary(file); event.target.value = ''; }
+  }, [importLibrary]);
+
+  const handleExportLibraryClick = useCallback(() => {
+    void exportLibrary();
+    setIsMoreOpen(false);
+  }, [exportLibrary]);
+
+  const handleImportLibraryClick = useCallback(() => {
+    importLibraryInputRef.current?.click();
+    setIsMoreOpen(false);
+  }, []);
+
+  const handlePrimaryAddClick = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
+  const handleSortOptionClick = useCallback((sortByVal: SortBy, sortOrderVal: SortOrder) => {
+    setSortBy(sortByVal);
+    setSortOrder(sortOrderVal);
+    setIsSortOpen(false);
+  }, [setSortBy, setSortOrder]);
+
+  const handleTypeOptionClick = useCallback((val: Asset['type']) => {
+    toggleTypeFilter(val);
+  }, [toggleTypeFilter]);
+
+  const handleOrientationOptionClick = useCallback((val: Orientation) => {
+    setOrientationFilter(val);
+  }, [setOrientationFilter]);
+
+  const handleColorFilterClick = useCallback((name: string, active: boolean) => {
+    setColorFilter(active ? null : name);
+  }, [setColorFilter]);
+
+  const handleLabelFilterClick = useCallback((name: string, active: boolean) => {
+    setLabelFilter(active ? null : name);
+  }, [setLabelFilter]);
+
+  const handleTagFilterClick = useCallback((tag: string) => {
+    toggleTagFilter(tag);
+  }, [toggleTagFilter]);
 
   // Close panels on outside click / escape
   useEffect(() => {
@@ -174,10 +306,10 @@ export default function Toolbar() {
       {/* Left: navigation + title */}
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-1 text-zinc-500">
-          <button onClick={goBack} disabled={!canGoBack} className="p-1 hover:bg-zinc-800 rounded-md transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+          <button onClick={goBack} disabled={!canGoBack} className="p-1 hover:bg-zinc-800 rounded-md transition-colors disabled:opacity-30 disabled:cursor-not-allowed" title="Go back" aria-label="Go back">
             <ChevronLeft size={18} strokeWidth={2.5} />
           </button>
-          <button onClick={goForward} disabled={!canGoForward} className="p-1 hover:bg-zinc-800 rounded-md transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+          <button onClick={goForward} disabled={!canGoForward} className="p-1 hover:bg-zinc-800 rounded-md transition-colors disabled:opacity-30 disabled:cursor-not-allowed" title="Go forward" aria-label="Go forward">
             <ChevronRight size={18} strokeWidth={2.5} />
           </button>
         </div>
@@ -207,10 +339,7 @@ export default function Toolbar() {
                 value={bulkTagValue}
                 onChange={(e) => setBulkTagValue(e.target.value)}
                 onBlur={handleBulkTagSubmit}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') { e.preventDefault(); handleBulkTagSubmit(); }
-                  if (e.key === 'Escape') { setBulkTagValue(''); setIsBulkTagOpen(false); }
-                }}
+                onKeyDown={handleBulkTagKeyDown}
                 className="w-28 border border-blue-500/40 bg-zinc-900 rounded-lg px-2.5 py-1 text-xs outline-none focus:ring-2 focus:ring-blue-500/30 placeholder:text-zinc-600 text-blue-200"
                 placeholder="tag name…"
               />
@@ -242,14 +371,22 @@ export default function Toolbar() {
 
             {/* Download all */}
             <button
-              onClick={() => selectedAssets.forEach(asset => {
-                const link = document.createElement('a');
-                link.href = asset.url; link.download = asset.name; link.click();
-              })}
+              onClick={handleBulkDownload}
               className="flex items-center gap-1.5 px-2.5 py-1 hover:bg-blue-500/20 rounded-lg text-blue-300 transition-colors"
-              title="Download all selected"
+              title="Download all selected individually"
             >
               <Download size={15} /> <span className="text-xs font-medium">Download</span>
+            </button>
+
+            {/* Export as ZIP */}
+            <button
+              onClick={() => void handleBulkExportZip()}
+              disabled={isZipping}
+              className="flex items-center gap-1.5 px-2.5 py-1 hover:bg-blue-500/20 rounded-lg text-blue-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Export selected as ZIP archive"
+            >
+              {isZipping ? <Loader2 size={15} className="animate-spin" /> : <Archive size={15} />}
+              <span className="text-xs font-medium">{isZipping ? 'Zipping…' : 'Export ZIP'}</span>
             </button>
 
             {/* Batch rename */}
@@ -259,15 +396,12 @@ export default function Toolbar() {
                   autoFocus
                   value={batchRenamePattern}
                   onChange={e => setBatchRenamePattern(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter') { e.preventDefault(); handleBatchRenameSubmit(); }
-                    if (e.key === 'Escape') { setBatchRenamePattern('{name}'); setIsBatchRenameOpen(false); }
-                  }}
+                  onKeyDown={handleBatchRenameKeyDown}
                   placeholder="{name} {index}"
                   className="w-32 border border-blue-500/40 bg-zinc-900 rounded-lg px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-blue-500/30 text-blue-200 placeholder:text-zinc-600"
                 />
-                <button onClick={handleBatchRenameSubmit} className="px-2 py-1 bg-blue-600/20 hover:bg-blue-600/40 rounded-lg text-blue-300 text-xs"><Check size={13} /></button>
-                <button onClick={() => { setBatchRenamePattern('{name}'); setIsBatchRenameOpen(false); }} className="px-1 py-1 hover:bg-blue-500/20 rounded-lg text-blue-400"><X size={13} /></button>
+                <button onClick={handleBatchRenameSubmit} className="px-2 py-1 bg-blue-600/20 hover:bg-blue-600/40 rounded-lg text-blue-300 text-xs" title="Confirm rename" aria-label="Confirm rename"><Check size={13} /></button>
+                <button onClick={handleBatchRenameCancel} className="px-1 py-1 hover:bg-blue-500/20 rounded-lg text-blue-400" title="Cancel rename" aria-label="Cancel rename"><X size={13} /></button>
               </div>
             ) : (
               <button onClick={() => setIsBatchRenameOpen(true)} className="flex items-center gap-1.5 px-2.5 py-1 hover:bg-blue-500/20 rounded-lg text-blue-300 transition-colors" title="Batch rename selected ({name}, {index}, {date})">
@@ -279,7 +413,7 @@ export default function Toolbar() {
             <button onClick={handleBulkDelete} className="flex items-center gap-1.5 px-2.5 py-1 hover:bg-red-500/20 rounded-lg text-red-400 transition-colors ml-1" title="Delete selected">
               <Trash2 size={15} /> <span className="text-xs font-medium">Delete</span>
             </button>
-            <button onClick={clearSelection} className="ml-1 p-1 hover:bg-blue-500/20 rounded-lg text-blue-400 transition-colors" title="Clear selection">
+            <button onClick={clearSelection} className="ml-1 p-1 hover:bg-blue-500/20 rounded-lg text-blue-400 transition-colors" title="Clear selection" aria-label="Clear selection">
               <X size={17} />
             </button>
           </div>
@@ -290,7 +424,7 @@ export default function Toolbar() {
               type="text"
               placeholder="Search name, tag, note…"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={handleSearchQueryChange}
               className="w-full bg-zinc-800/80 hover:bg-zinc-800 focus:bg-zinc-900 border border-transparent focus:border-blue-500/40 focus:ring-2 focus:ring-blue-500/10 rounded-lg pl-8 pr-3 py-1.5 text-[13px] outline-none transition-colors placeholder:text-zinc-600 text-zinc-200"
             />
           </div>
@@ -306,7 +440,7 @@ export default function Toolbar() {
               max={320}
               step={10}
               value={thumbSize}
-              onChange={(e) => setThumbSize(Number(e.target.value))}
+              onChange={handleThumbSizeChange}
               className="falcon-slider w-20"
               aria-label="Thumbnail size"
             />
@@ -316,7 +450,7 @@ export default function Toolbar() {
         {/* View toggles */}
         <div className="flex items-center bg-zinc-800/80 p-0.5 rounded-lg border border-zinc-700/60">
           <button
-            onClick={() => setViewMode('grid')}
+            onClick={handleViewModeGrid}
             className={`p-1 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'}`}
             aria-label="Grid view"
             title="Grid view"
@@ -324,7 +458,7 @@ export default function Toolbar() {
             <LayoutGrid size={15} strokeWidth={2} />
           </button>
           <button
-            onClick={() => setViewMode('masonry')}
+            onClick={handleViewModeMasonry}
             className={`p-1 rounded-md transition-colors ${viewMode === 'masonry' ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'}`}
             aria-label="Masonry view"
             title="Masonry / Waterfall view"
@@ -332,7 +466,7 @@ export default function Toolbar() {
             <Rows3 size={15} strokeWidth={2} />
           </button>
           <button
-            onClick={() => setViewMode('list')}
+            onClick={handleViewModeList}
             className={`p-1 rounded-md transition-colors ${viewMode === 'list' ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'}`}
             aria-label="List view"
             title="List view"
@@ -346,7 +480,7 @@ export default function Toolbar() {
             {/* Sort */}
             <div ref={sortRef} className="relative">
               <button
-                onClick={() => { setIsSortOpen(p => !p); setIsFilterOpen(false); setIsMoreOpen(false); }}
+                onClick={handleSortToggle}
                 className={`transition-colors px-2 py-1.5 flex items-center gap-1.5 border border-zinc-700/60 rounded-lg text-xs ${
                   isSortOpen ? 'bg-zinc-800 text-zinc-100' : 'bg-zinc-800/50 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
                 }`}
@@ -362,7 +496,7 @@ export default function Toolbar() {
                     return (
                       <button
                         key={option.label}
-                        onClick={() => { setSortBy(option.sortBy); setSortOrder(option.sortOrder); setIsSortOpen(false); }}
+                        onClick={() => handleSortOptionClick(option.sortBy, option.sortOrder)}
                         className={`w-full flex items-center justify-between px-3 py-2 rounded-md text-left ${isActive ? 'bg-blue-500/20 text-blue-300' : 'hover:bg-zinc-700'}`}
                       >
                         {option.label}
@@ -377,7 +511,7 @@ export default function Toolbar() {
             {/* Filter */}
             <div ref={filterRef} className="relative">
               <button
-                onClick={() => { setIsFilterOpen(p => !p); setIsSortOpen(false); setIsMoreOpen(false); }}
+                onClick={handleFilterToggle}
                 className={`relative transition-colors p-1.5 flex items-center justify-center border border-zinc-700/60 rounded-lg ${
                   isFilterOpen || activeFilterCount > 0 ? 'bg-blue-500/20 text-blue-300 border-blue-500/30' : 'bg-zinc-800/50 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
                 }`}
@@ -405,7 +539,7 @@ export default function Toolbar() {
                         return (
                           <button
                             key={option.value}
-                            onClick={() => toggleTypeFilter(option.value)}
+                            onClick={() => handleTypeOptionClick(option.value)}
                             className={`px-2 py-1.5 rounded-lg border text-center ${active ? 'bg-blue-500/20 border-blue-500/40 text-blue-300' : 'bg-zinc-900 border-zinc-700 text-zinc-400 hover:bg-zinc-700/50'}`}
                           >
                             {option.label}
@@ -423,7 +557,7 @@ export default function Toolbar() {
                         return (
                           <button
                             key={option.value}
-                            onClick={() => setOrientationFilter(option.value)}
+                            onClick={() => handleOrientationOptionClick(option.value)}
                             className={`flex flex-col items-center gap-1 px-1 py-1.5 rounded-lg border ${active ? 'bg-blue-500/20 border-blue-500/40 text-blue-300' : 'bg-zinc-900 border-zinc-700 text-zinc-400 hover:bg-zinc-700/50'}`}
                             title={option.label}
                           >
@@ -460,7 +594,7 @@ export default function Toolbar() {
                         return (
                           <button
                             key={bucket.name}
-                            onClick={() => setColorFilter(active ? null : bucket.name)}
+                            onClick={() => handleColorFilterClick(bucket.name, active)}
                             className={`h-6 w-6 rounded-full border-2 transition-transform hover:scale-110 ${active ? 'border-blue-400 ring-2 ring-blue-500/30' : 'border-zinc-700'}`}
                             style={{ backgroundColor: bucket.hex }}
                             title={bucket.name}
@@ -479,7 +613,7 @@ export default function Toolbar() {
                         return (
                           <button
                             key={bucket.name}
-                            onClick={() => setLabelFilter(active ? null : bucket.name)}
+                            onClick={() => handleLabelFilterClick(bucket.name, active)}
                             className={`h-6 w-6 rounded-full border-2 transition-transform hover:scale-110 ${active ? 'border-blue-400 ring-2 ring-blue-500/30' : 'border-zinc-700'}`}
                             style={{ backgroundColor: bucket.hex }}
                             title={`Label: ${bucket.name}`}
@@ -497,7 +631,7 @@ export default function Toolbar() {
                         {allTags.map(tag => (
                           <button
                             key={tag}
-                            onClick={() => toggleTagFilter(tag)}
+                            onClick={() => handleTagFilterClick(tag)}
                             className={`px-2 py-0.5 border rounded text-[10px] ${tagFilters.has(tag) ? 'bg-blue-500/20 border-blue-500/40 text-blue-300' : 'bg-zinc-900 border-zinc-700 text-zinc-400 hover:bg-zinc-700/50'}`}
                           >
                             #{tag}
@@ -531,19 +665,14 @@ export default function Toolbar() {
               accept="image/*,video/*,audio/*,.svg,.pdf,.ttf,.otf,.woff,.woff2"
               multiple
               className="hidden"
-              onChange={event => {
-                if (event.target.files) { void addFiles(event.target.files); event.target.value = ''; }
-              }}
+              onChange={handleFileInputChange}
             />
             <input
               ref={importLibraryInputRef}
               type="file"
               accept=".json"
               className="hidden"
-              onChange={async event => {
-                const file = event.target.files?.[0];
-                if (file) { await importLibrary(file); event.target.value = ''; }
-              }}
+              onChange={handleImportLibraryInputChange}
             />
 
             {/* URL import */}
@@ -555,10 +684,7 @@ export default function Toolbar() {
                   type="url"
                   value={urlInputValue}
                   onChange={e => setUrlInputValue(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter') { e.preventDefault(); void handleUrlSubmit(); }
-                    if (e.key === 'Escape') { setUrlInputValue(''); setIsUrlInputOpen(false); }
-                  }}
+                  onKeyDown={handleUrlInputKeyDown}
                   placeholder="https://…"
                   disabled={isLoadingUrl}
                   className="w-48 border border-zinc-600 bg-zinc-900 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-blue-500/40 focus:ring-2 focus:ring-blue-500/10 placeholder:text-zinc-600 text-zinc-200 disabled:opacity-50"
@@ -567,18 +693,21 @@ export default function Toolbar() {
                   onClick={() => void handleUrlSubmit()}
                   disabled={isLoadingUrl || !urlInputValue.trim()}
                   className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg text-xs font-medium flex items-center gap-1 transition-colors"
+                  title="Confirm URL import"
+                  aria-label="Confirm URL import"
                 >
                   {isLoadingUrl ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
                 </button>
-                <button onClick={() => { setUrlInputValue(''); setIsUrlInputOpen(false); }} className="px-1.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 rounded-lg text-xs transition-colors">
+                <button onClick={handleUrlInputCancel} className="px-1.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 rounded-lg text-xs transition-colors" title="Cancel URL import" aria-label="Cancel URL import">
                   <X size={13} />
                 </button>
               </div>
             ) : (
               <button
-                onClick={() => { setIsUrlInputOpen(true); setTimeout(() => urlInputRef.current?.focus(), 50); }}
+                onClick={handleUrlInputOpenClick}
                 className="bg-zinc-800/80 hover:bg-zinc-800 border border-zinc-700/60 text-zinc-400 hover:text-zinc-200 rounded-lg text-[13px] font-medium px-2.5 py-1.5 flex items-center gap-1.5 transition-colors"
                 title="Import from URL"
+                aria-label="Import from URL"
               >
                 <Link size={14} />
               </button>
@@ -588,9 +717,10 @@ export default function Toolbar() {
             {!isUrlInputOpen && (
               <div ref={moreRef} className="relative">
                 <button
-                  onClick={() => { setIsMoreOpen(p => !p); setIsFilterOpen(false); setIsSortOpen(false); }}
+                  onClick={handleMoreToggle}
                   className={`bg-zinc-800/80 hover:bg-zinc-800 border border-zinc-700/60 text-zinc-400 hover:text-zinc-200 rounded-lg px-2.5 py-1.5 flex items-center transition-colors ${isMoreOpen ? 'bg-zinc-800 text-zinc-200' : ''}`}
                   title="More options"
+                  aria-label="More options"
                 >
                   <MoreHorizontal size={15} />
                 </button>
@@ -598,13 +728,13 @@ export default function Toolbar() {
                   <div className="panel-enter absolute right-0 top-9 w-48 bg-zinc-800 border border-zinc-700 rounded-lg shadow-2xl shadow-black/50 py-1 text-xs text-zinc-300 z-50">
                     <div className="px-3 py-1.5 text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Library</div>
                     <button
-                      onClick={() => { void exportLibrary(); setIsMoreOpen(false); }}
+                      onClick={handleExportLibraryClick}
                       className="w-full px-3 py-2 text-left hover:bg-zinc-700 transition-colors flex items-center gap-2.5"
                     >
                       <FileDown size={13} className="text-zinc-400" /> Export Library…
                     </button>
                     <button
-                      onClick={() => { importLibraryInputRef.current?.click(); setIsMoreOpen(false); }}
+                      onClick={handleImportLibraryClick}
                       className="w-full px-3 py-2 text-left hover:bg-zinc-700 transition-colors flex items-center gap-2.5"
                     >
                       <FileUp size={13} className="text-zinc-400" /> Import Library…
@@ -617,7 +747,7 @@ export default function Toolbar() {
             {/* Primary add button */}
             {!isUrlInputOpen && (
               <button
-                onClick={() => fileInputRef.current?.click()}
+                onClick={handlePrimaryAddClick}
                 disabled={isImporting}
                 className="ml-0.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-60 text-white rounded-lg text-[13px] font-medium px-3 py-1.5 flex items-center gap-1.5 shadow-sm shadow-blue-900/30 transition-colors"
               >

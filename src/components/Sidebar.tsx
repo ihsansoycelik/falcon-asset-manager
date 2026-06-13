@@ -5,7 +5,7 @@ import {
   Zap, Shuffle, Edit2, X, ChevronRight, Lock, Unlock
 } from 'lucide-react';
 import { createFolderId, useStore } from '../store/AssetContext';
-import { SmartFolderRule } from '../types';
+import { SmartFolderRule, SmartFolderRuleField } from '../types';
 
 type SidebarIcon = React.ComponentType<{ size?: number; strokeWidth?: number; className?: string }>;
 
@@ -114,33 +114,117 @@ function SmartFolderEditor({ initial, onSave, onCancel }: {
         <span>rules</span>
       </div>
       {rules.map((rule, i) => (
-        <div key={i} className="flex items-center gap-1">
-          <select value={rule.field} onChange={e => updateRule(i, { field: e.target.value as SmartFolderRule['field'] })}
-            className="flex-1 rounded border border-zinc-700 bg-zinc-800 px-1 py-0.5 text-zinc-300 outline-none">
-            <option value="tag">Tag</option>
-            <option value="type">Type</option>
-            <option value="rating">Rating ≥</option>
-            <option value="starred">Starred</option>
-          </select>
-          {rule.field === 'starred' ? (
-            <select value={rule.value} onChange={e => updateRule(i, { value: e.target.value })} className="flex-1 rounded border border-zinc-700 bg-zinc-800 px-1 py-0.5 text-zinc-300 outline-none">
-              <option value="true">Yes</option><option value="false">No</option>
+        <div key={i} className="flex flex-col gap-1.5 border-b border-zinc-800 pb-2 mb-2 last:border-b-0 last:pb-0 last:mb-0">
+          <div className="flex items-center gap-1">
+            <select value={rule.field} onChange={e => {
+              const nextField = e.target.value as SmartFolderRuleField;
+              let defaultValue = '';
+              if (nextField === 'starred' || nextField === 'has_note') defaultValue = 'true';
+              else if (nextField === 'type') defaultValue = 'image';
+              else if (nextField === 'rating') defaultValue = '1';
+              else if (nextField === 'date_added') defaultValue = '7days';
+              else if (nextField === 'size') defaultValue = 'gt:1:MB';
+              updateRule(i, { field: nextField, value: defaultValue });
+            }} className="flex-1 rounded border border-zinc-700 bg-zinc-800 px-1 py-0.5 text-zinc-300 outline-none text-[10px]">
+              <option value="tag">Tag</option>
+              <option value="type">Type</option>
+              <option value="rating">Rating ≥</option>
+              <option value="starred">Starred</option>
+              <option value="name_contains">Name contains</option>
+              <option value="date_added">Date added within</option>
+              <option value="size">File size</option>
+              <option value="has_note">Has note</option>
+              <option value="folder_contains">Folder path contains</option>
             </select>
-          ) : rule.field === 'type' ? (
-            <select value={rule.value} onChange={e => updateRule(i, { value: e.target.value })} className="flex-1 rounded border border-zinc-700 bg-zinc-800 px-1 py-0.5 text-zinc-300 outline-none">
-              <option value="image">Image</option><option value="video">Video</option>
-              <option value="vector">Vector</option><option value="audio">Audio</option>
-              <option value="pdf">PDF</option><option value="font">Font</option>
-            </select>
-          ) : rule.field === 'rating' ? (
-            <select value={rule.value} onChange={e => updateRule(i, { value: e.target.value })} className="flex-1 rounded border border-zinc-700 bg-zinc-800 px-1 py-0.5 text-zinc-300 outline-none">
-              {[1,2,3,4,5].map(n => <option key={n} value={String(n)}>{n}+</option>)}
-            </select>
-          ) : (
-            <input value={rule.value} onChange={e => updateRule(i, { value: e.target.value.replace(/^#/, '').toLowerCase() })} placeholder="value…"
-              className="flex-1 rounded border border-zinc-700 bg-zinc-800 px-1 py-0.5 text-zinc-300 outline-none placeholder:text-zinc-600" />
-          )}
-          <button onClick={() => removeRule(i)} className="text-zinc-600 hover:text-red-400 flex-shrink-0"><X size={12} /></button>
+            <button onClick={() => removeRule(i)} className="text-zinc-600 hover:text-red-400 flex-shrink-0 ml-1"><X size={12} /></button>
+          </div>
+          <div className="flex items-center gap-1 pl-1">
+            {rule.field === 'starred' ? (
+              <select value={rule.value} onChange={e => updateRule(i, { value: e.target.value })} className="flex-1 rounded border border-zinc-700 bg-zinc-800 px-1 py-0.5 text-zinc-300 outline-none text-[10px]">
+                <option value="true">Yes</option><option value="false">No</option>
+              </select>
+            ) : rule.field === 'has_note' ? (
+              <select value={rule.value} onChange={e => updateRule(i, { value: e.target.value })} className="flex-1 rounded border border-zinc-700 bg-zinc-800 px-1 py-0.5 text-zinc-300 outline-none text-[10px]">
+                <option value="true">Yes</option><option value="false">No</option>
+              </select>
+            ) : rule.field === 'type' ? (
+              <select value={rule.value} onChange={e => updateRule(i, { value: e.target.value })} className="flex-1 rounded border border-zinc-700 bg-zinc-800 px-1 py-0.5 text-zinc-300 outline-none text-[10px]">
+                <option value="image">Image</option><option value="video">Video</option>
+                <option value="vector">Vector</option><option value="audio">Audio</option>
+                <option value="pdf">PDF</option><option value="font">Font</option>
+              </select>
+            ) : rule.field === 'rating' ? (
+              <select value={rule.value} onChange={e => updateRule(i, { value: e.target.value })} className="flex-1 rounded border border-zinc-700 bg-zinc-800 px-1 py-0.5 text-zinc-300 outline-none text-[10px]">
+                {[1,2,3,4,5].map(n => <option key={n} value={String(n)}>{n}+</option>)}
+              </select>
+            ) : rule.field === 'date_added' ? (() => {
+              const isCustom = rule.value.startsWith('custom:');
+              const presetValue = isCustom ? 'custom' : rule.value;
+              let startDate = '';
+              let endDate = '';
+              if (isCustom) {
+                const parts = rule.value.split(':');
+                startDate = parts[1] || '';
+                endDate = parts[2] || '';
+              }
+              return (
+                <div className="flex-1 flex flex-col gap-1 min-w-0">
+                  <select value={presetValue} onChange={e => {
+                    if (e.target.value === 'custom') {
+                      const todayStr = new Date().toISOString().split('T')[0];
+                      updateRule(i, { value: `custom:${todayStr}:${todayStr}` });
+                    } else {
+                      updateRule(i, { value: e.target.value });
+                    }
+                  }} className="w-full rounded border border-zinc-700 bg-zinc-800 px-1 py-0.5 text-zinc-300 outline-none text-[10px]">
+                    <option value="7days">Last 7 days</option>
+                    <option value="30days">Last 30 days</option>
+                    <option value="this_month">This month</option>
+                    <option value="custom">Custom range…</option>
+                  </select>
+                  {isCustom && (
+                    <div className="flex items-center gap-1 mt-1">
+                      <input type="date" value={startDate} onChange={e => updateRule(i, { value: `custom:${e.target.value}:${endDate}` })}
+                        className="w-[85px] rounded border border-zinc-700 bg-zinc-800 px-1 py-0.5 text-zinc-300 outline-none text-[9px]" />
+                      <span className="text-zinc-600 text-[9px]">to</span>
+                      <input type="date" value={endDate} onChange={e => updateRule(i, { value: `custom:${startDate}:${e.target.value}` })}
+                        className="w-[85px] rounded border border-zinc-700 bg-zinc-800 px-1 py-0.5 text-zinc-300 outline-none text-[9px]" />
+                    </div>
+                  )}
+                </div>
+              );
+            })() : rule.field === 'size' ? (() => {
+              const parts = rule.value.split(':');
+              const comp = parts[0] || 'gt';
+              const valStr = parts[1] || '1';
+              const unit = parts[2] || 'MB';
+              return (
+                <div className="flex-1 flex items-center gap-1 min-w-0">
+                  <select value={comp} onChange={e => updateRule(i, { value: `${e.target.value}:${valStr}:${unit}` })}
+                    className="rounded border border-zinc-700 bg-zinc-800 px-1 py-0.5 text-zinc-300 outline-none text-[10px] min-w-8">
+                    <option value="gt">&gt;</option>
+                    <option value="lt">&lt;</option>
+                  </select>
+                  <input type="number" min="0" value={valStr} onChange={e => updateRule(i, { value: `${comp}:${e.target.value}:${unit}` })}
+                    className="w-12 rounded border border-zinc-700 bg-zinc-800 px-1 py-0.5 text-zinc-300 outline-none text-[10px] min-w-0 flex-1" />
+                  <select value={unit} onChange={e => updateRule(i, { value: `${comp}:${valStr}:${e.target.value}` })}
+                    className="rounded border border-zinc-700 bg-zinc-800 px-1 py-0.5 text-zinc-300 outline-none text-[10px]">
+                    <option value="KB">KB</option>
+                    <option value="MB">MB</option>
+                  </select>
+                </div>
+              );
+            })() : rule.field === 'name_contains' ? (
+              <input value={rule.value} onChange={e => updateRule(i, { value: e.target.value })} placeholder="name contains…"
+                className="flex-1 rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 text-zinc-300 outline-none placeholder:text-zinc-600 min-w-0 text-[10px]" />
+            ) : rule.field === 'folder_contains' ? (
+              <input value={rule.value} onChange={e => updateRule(i, { value: e.target.value })} placeholder="folder starts with…"
+                className="flex-1 rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 text-zinc-300 outline-none placeholder:text-zinc-600 min-w-0 text-[10px]" />
+            ) : (
+              <input value={rule.value} onChange={e => updateRule(i, { value: e.target.value.replace(/^#/, '').toLowerCase() })} placeholder="value…"
+                className="flex-1 rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 text-zinc-300 outline-none placeholder:text-zinc-600 min-w-0 text-[10px]" />
+            )}
+          </div>
         </div>
       ))}
       <button onClick={addRule} className="text-zinc-500 hover:text-zinc-300 text-[10px]">+ Add rule</button>
@@ -280,7 +364,11 @@ export default function Sidebar() {
 
   // Library lock state — PIN stored as a lightweight hash in localStorage
   const [isLocked, setIsLocked] = useState(() => {
-    return !!localStorage.getItem('falcon_lock_pin') && localStorage.getItem('falcon_locked') === 'true';
+    // Always start locked on page load if a PIN exists.
+    // Previously also required 'falcon_locked' === 'true', which let anyone
+    // bypass by deleting that key in DevTools and reloading. Now the PIN hash
+    // itself ('falcon_lock_pin') is the single source of truth for lock state.
+    return !!localStorage.getItem('falcon_lock_pin');
   });
   const [showLockSetup, setShowLockSetup] = useState(false);
   const [lockPin, setLockPin] = useState('');
@@ -484,7 +572,7 @@ export default function Sidebar() {
           </div>
           {!hasPin && (
             <p className="text-[10px] text-amber-500/80 leading-relaxed">
-              Casual deterrent only. Anyone with browser DevTools can bypass this instantly (delete the <code className="font-mono">falcon_locked</code> key) or brute-force the 4-digit PIN in under a second. Do not rely on this to protect sensitive assets.
+              Casual deterrent only. Anyone with browser DevTools can bypass by deleting the <code className="font-mono">falcon_lock_pin</code> key (this also clears your PIN) or brute-forcing a short PIN. Do not rely on this to protect sensitive assets.
             </p>
           )}
           <input

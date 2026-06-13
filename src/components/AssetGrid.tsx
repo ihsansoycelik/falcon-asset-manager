@@ -3,10 +3,12 @@ import { useStore } from '../store/AssetContext';
 import { Asset } from '../types';
 import { formatBytes, formatDate } from '../lib/utils';
 import RatingStars from './RatingStars';
+import { downloadAssetFile, exportAssetsAsZip } from '../lib/download';
 import {
   Download, ExternalLink, Film, FileQuestion, Search, Star, Trash2, Upload,
   UploadCloud, X, Music, FileText, Type, Pencil, Eraser, Undo2, CheckCircle2,
   ChevronLeft, ChevronRight, Copy, FolderOpen, Tag as LabelIcon,
+  Clipboard, ClipboardCheck,
 } from 'lucide-react';
 import { COLOR_BUCKETS } from '../types';
 
@@ -243,6 +245,7 @@ export default function AssetGrid() {
   const [dragOverlay, setDragOverlay] = useState<{ x: number; y: number; count: number } | null>(null);
   const [quickLookAsset, setQuickLookAsset] = useState<Asset | null>(null);
   const [quickLookScale, setQuickLookScale] = useState(1);
+  const [quickLookCopied, setQuickLookCopied] = useState(false);
   const [gridColumnCount, setGridColumnCount] = useState(1);
   const [copiedToast, setCopiedToast] = useState<string | null>(null);
 
@@ -467,6 +470,21 @@ export default function AssetGrid() {
       if (isCommand && event.key.toLowerCase() === 'a') { event.preventDefault(); selectAllFilteredAssets(); }
       if (isCommand && event.key.toLowerCase() === 'z') { event.preventDefault(); undoLastDelete(); }
 
+      if (isCommand && event.key.toLowerCase() === 'c' && selectedAssetIds.size > 0) {
+        event.preventDefault();
+        const selected = filteredAssets.filter(a => selectedAssetIds.has(a.id));
+        if (selected.length === 1) {
+          const asset = selected[0];
+          if (asset.type === 'image' || asset.type === 'vector') {
+            void copyAssetImage(asset);
+          } else {
+            void copyToClipboard(asset.name, 'Name copied');
+          }
+        } else {
+          void exportAssetsAsZip(selected);
+        }
+      }
+
       if (!isCommand && /^[0-5]$/.test(event.key) && selectedAssetIds.size > 0) {
         event.preventDefault();
         setSelectionRating(Number(event.key));
@@ -537,12 +555,33 @@ export default function AssetGrid() {
     if (asset.type !== 'image' && asset.type !== 'vector') return;
     try {
       const response = await fetch(asset.url);
-      const blob = await response.blob();
-      // Clipboard.write requires HTTPS. All major static hosts (Vercel, Netlify,
-      // Cloudflare Pages) enforce HTTPS automatically. Falls back to URL copy on HTTP.
-      await navigator.clipboard.write([new ClipboardItem({ [blob.type || 'image/png']: blob })]);
-    } catch {
+      let blob = await response.blob();
+      if (blob.type !== 'image/png') {
+        blob = await new Promise<Blob>((resolve, reject) => {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.naturalWidth || img.width;
+            canvas.height = img.naturalHeight || img.height;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.drawImage(img, 0, 0);
+              canvas.toBlob(b => b ? resolve(b) : reject(new Error('Canvas empty')), 'image/png');
+            } else reject(new Error('No context'));
+          };
+          img.onerror = () => reject(new Error('Load error'));
+          img.src = asset.url;
+        });
+      }
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+      setCopiedToast('Image copied to clipboard');
+      window.setTimeout(() => setCopiedToast(null), 1600);
+    } catch (err) {
+      console.error(err);
       await navigator.clipboard.writeText(asset.url);
+      setCopiedToast('URL copied (Fallback)');
+      window.setTimeout(() => setCopiedToast(null), 1600);
     } finally {
       setContextMenu(null);
     }
@@ -557,10 +596,47 @@ export default function AssetGrid() {
     setContextMenu(null);
   };
 
+  const handleQuickLookCopy = async () => {
+    if (!quickLookAsset) return;
+    try {
+      if (quickLookAsset.type === 'image' || quickLookAsset.type === 'vector') {
+        const response = await fetch(quickLookAsset.url);
+        let blob = await response.blob();
+        if (blob.type !== 'image/png') {
+          blob = await new Promise<Blob>((resolve, reject) => {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => {
+              const canvas = document.createElement('canvas');
+              canvas.width = img.naturalWidth || img.width;
+              canvas.height = img.naturalHeight || img.height;
+              const ctx = canvas.getContext('2d');
+              if (ctx) {
+                ctx.drawImage(img, 0, 0);
+                canvas.toBlob(b => b ? resolve(b) : reject(new Error('Canvas empty')), 'image/png');
+              } else reject(new Error('No context'));
+            };
+            img.onerror = () => reject(new Error('Load error'));
+            img.src = quickLookAsset.url;
+          });
+        }
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+      } else {
+        await navigator.clipboard.writeText(quickLookAsset.url);
+      }
+      setQuickLookCopied(true);
+      window.setTimeout(() => setQuickLookCopied(false), 1500);
+    } catch {
+      try {
+        await navigator.clipboard.writeText(quickLookAsset.url);
+        setQuickLookCopied(true);
+        window.setTimeout(() => setQuickLookCopied(false), 1500);
+      } catch {}
+    }
+  };
+
   const downloadAsset = (asset: Asset) => {
-    const link = document.createElement('a');
-    link.href = asset.url; link.download = asset.name; link.rel = 'noopener noreferrer';
-    document.body.appendChild(link); link.click(); link.remove();
+    downloadAssetFile(asset);
   };
 
   const quickLookIndex = quickLookAsset ? filteredAssets.findIndex(a => a.id === quickLookAsset.id) : -1;
@@ -731,14 +807,23 @@ export default function AssetGrid() {
                 Rename…
               </button>
 
-              {/* Copy options */}
-              <button
-                onClick={() => void copyAssetImage(contextMenu.asset)}
-                disabled={contextMenu.asset.type === 'video' || contextMenu.asset.type === 'audio' || contextMenu.asset.type === 'pdf' || contextMenu.asset.type === 'font'}
-                className="w-full px-3 py-2 text-left hover:bg-zinc-700/70 transition-colors disabled:cursor-not-allowed disabled:text-zinc-600 flex items-center gap-2"
-              >
-                <Copy size={12} className="text-zinc-500" /> Copy Image
-              </button>
+              {/* Copy / ZIP options */}
+              {selectedAssetIds.size > 1 ? (
+                <button
+                  onClick={() => { void exportAssetsAsZip(filteredAssets.filter(a => selectedAssetIds.has(a.id))); setContextMenu(null); }}
+                  className="w-full px-3 py-2 text-left hover:bg-zinc-700/70 transition-colors flex items-center gap-2"
+                >
+                  <Download size={12} className="text-zinc-500" /> Export as ZIP ({selectedAssetIds.size} files)
+                </button>
+              ) : (
+                <button
+                  onClick={() => void copyAssetImage(contextMenu.asset)}
+                  disabled={contextMenu.asset.type === 'video' || contextMenu.asset.type === 'audio' || contextMenu.asset.type === 'pdf' || contextMenu.asset.type === 'font'}
+                  className="w-full px-3 py-2 text-left hover:bg-zinc-700/70 transition-colors disabled:cursor-not-allowed disabled:text-zinc-600 flex items-center gap-2"
+                >
+                  <Copy size={12} className="text-zinc-500" /> Copy Image
+                </button>
+              )}
               <button
                 onClick={() => void copyToClipboard(contextMenu.asset.name, 'Name copied')}
                 className="w-full px-3 py-2 text-left hover:bg-zinc-700/70 transition-colors flex items-center gap-2"
@@ -1003,6 +1088,18 @@ export default function AssetGrid() {
                   <button onClick={() => downloadAsset(quickLookAsset)}
                     className="rounded-md bg-black/60 px-2 py-1 text-[10px] font-medium text-zinc-200 shadow-sm backdrop-blur hover:bg-black/80">
                     <span className="inline-flex items-center gap-1">Download <Download size={10} /></span>
+                  </button>
+                  <button onClick={handleQuickLookCopy}
+                    className="rounded-md bg-black/60 px-2 py-1 text-[10px] font-medium text-zinc-200 shadow-sm backdrop-blur hover:bg-black/80 min-w-[50px] transition-all duration-200">
+                    {quickLookCopied ? (
+                      <span className="inline-flex items-center gap-1 text-green-400 font-semibold scale-105">
+                        Copied! <ClipboardCheck size={10} className="text-green-400" />
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1">
+                        Copy <Clipboard size={10} />
+                      </span>
+                    )}
                   </button>
                   <button onClick={() => window.open(quickLookAsset.url, '_blank', 'noopener,noreferrer')}
                     className="rounded-md bg-black/60 px-2 py-1 text-[10px] font-medium text-zinc-200 shadow-sm backdrop-blur hover:bg-black/80">
